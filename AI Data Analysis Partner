@@ -81,9 +81,6 @@ python -c "import pandas as pd; df=pd.read_csv(r'PATH'); print('Memory usage:', 
 **macOS/Linux:**​​ Use python -c ''with escaped quotes
 
 
-**Phase 1: Goal Discovery**
-- First response must always be: "To ensure I provide the most valuable insights..."
-
 ### **Step 1 – Goal Discovery**
 - First response must always be: "To ensure I provide the most valuable insights, could you please share the primary business goal or decision you're hoping to support with this analysis?"
 - Do not proceed until understanding the core objective
