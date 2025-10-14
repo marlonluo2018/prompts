@@ -21,6 +21,7 @@ QUOTING RULES (ABSOLUTE REQUIREMENT)
    • Double quotes inside Python code
    • Unescaped single quotes
    • f-strings
+   • Avoid CMD befoe python code
    • Triple-quoted strings
 
 SUPPORTED PLATFORMS
@@ -36,51 +37,64 @@ SUPPORTED PLATFORMS
 4. Require output verification between steps
 
 === STEP 1: METADATA EXTRACTION ===
-Windows PowerShell Template:
+python code template:
 python -c "
-import pandas as pd, sys, os
-file_path = r'FULL_PATH'
-encodings = ['utf-8', 'latin1', 'cp1252', None]
-df = None
+import pandas as pd
+import chardet
+import sys
+import os
 
-for enc in encodings:
-    try:
-        df = pd.read_csv(file_path, encoding=enc)
-        print('SUCCESS: Loaded with encoding: ' + str(enc))
-        break
-    except Exception as e:
-        if enc == encodings[-1]:
-            print('ERROR: ' + str(e))
-            sys.exit(1)
+file_path = r'FULL_PATH_TO_YOUR_CSV_FILE'
 
-print('\n=== METADATA: ' + os.path.basename(file_path) + ' ===')
-print('Rows: ' + str(len(df)) + ' | Columns: ' + str(len(df.columns)))
-print('\nCOLUMN DTYPES:')
-print(df.dtypes.to_string())
-print('\nNULL COUNTS:')
-print(df.isnull().sum().to_string())
-print('\nSAMPLE DATA:')
-print(df.head(2).to_string())
+try:
+    # Detect encoding using chardet
+    with open(file_path, 'rb') as f:
+        raw_data = f.read()
+    result = chardet.detect(raw_data)
+    detected_encoding = result['encoding']
+    confidence = result['confidence']
+    print(f'Detected encoding: {detected_encoding} (Confidence: {confidence:.2f})')
+
+    # Create prioritized encoding list
+    encodings_to_try = []
+    if confidence > 0.6 and detected_encoding:
+        encodings_to_try.append(detected_encoding)
+    
+    # Common fallback encodings
+    encodings_to_try.extend(['utf-8-sig', 'gbk', 'gb18030', 'utf-8', 'latin1', 'cp1252'])
+    
+    df = None
+    for enc in encodings_to_try:
+        try:
+            df = pd.read_csv(file_path, encoding=enc, sep='\t')
+            print(f'SUCCESS: File loaded with encoding: {enc}')
+            break
+        except Exception as e:
+            if enc == encodings_to_try[-1]:
+                # Final fallback with error handling
+                try:
+                    df = pd.read_csv(file_path, encoding='utf-8', errors='replace')
+                    print('SUCCESS: File loaded with utf-8 (errors replaced)')
+                except Exception as final_e:
+                    print(f'ERROR: All attempts failed: {final_e}')
+                    sys.exit(1)
+
+    # Display results if successful
+    if df is not None:
+        print(f'=== FILE METADATA: {os.path.basename(file_path)} ===')
+        print(f'Rows: {len(df)} | Columns: {len(df.columns)}')
+        print('COLUMN DATA TYPES:')
+        print(df.dtypes)
+        print('FIRST 2 ROWS:')
+        print(df.head(2))
+
+except FileNotFoundError:
+    print(f'ERROR: File not found at {file_path}')
+    sys.exit(1)
+except Exception as e:
+    print(f'Unexpected error: {e}')
+    sys.exit(1)
 "
-macOS/Linux Template:
-python -c "import pandas as pd, sys, os; file_path='/path/to/file.csv'; encodings=['utf-8','latin1','cp1252', None]; df=None; 
-for enc in encodings:
-    try:
-        df=pd.read_csv(file_path, encoding=enc);
-        print('SUCCESS: Loaded with encoding: ' + str(enc));
-        break;
-    except Exception as e:
-        if enc == encodings[-1]: 
-            print('ERROR: ' + str(e));
-            sys.exit(1);
-print('\n=== METADATA: ' + os.path.basename(file_path) + ' ===');
-print('Rows: ' + str(len(df)) + ' | Columns: ' + str(len(df.columns)));
-print('\nCOLUMN DTYPES:'); 
-print(df.dtypes.to_string());
-print('\nNULL COUNTS:'); 
-print(df.isnull().sum().to_string());
-print('\nSAMPLE DATA:'); 
-print(df.head(2))"
 
 USER MUST:
 1. Run command for each file
@@ -100,22 +114,44 @@ After description, I will:
 3. Generate quote-safe merge code"
 
 === STEP 3: MERGE EXECUTION ===
-Windows PowerShell Template:
-python -c "import pandas as pd; df1 = pd.read_csv(r'PATH1'); df2 = pd.read_csv(r'PATH2'); 
-# Custom merge logic
-if 'without certificates' in DESCRIPTION: 
-    merged = pd.merge(df1, df2, on='KEY', how='left')
-    result = merged[merged['KEY_right'].isnull()]
-    result['Status'] = 'Missing Certificate'
-# Output
-result.to_csv(r'NEW_OUTPUT_PATH', index=False); 
-print('MERGE_SUCCESS: Created NEW file with ' + str(len(result)) + ' rows')"
+python command template:
+python -c "
+import pandas as pd
+import sys
 
-macOS/Linux Template:
-python -c "import pandas as pd; df1 = pd.read_csv('/path/to/file1.csv'); df2 = pd.read_csv('/path/to/file2.csv'); 
-# Same custom logic
-result.to_csv('/path/to/NEW_output.csv', index=False); 
-print('MERGE_SUCCESS: Created NEW file with ' + str(len(result)) + ' rows')"
+# File paths - update these for your specific files
+file1_path = r'PATH_TO_FILE1_CSV'
+file2_path = r'PATH_TO_FILE2_CSV'
+output_path = r'PATH_TO_OUTPUT_CSV'
+
+try:
+    # Read both CSV files
+    df1 = pd.read_csv(file1_path)
+    df2 = pd.read_csv(file2_path)
+    
+    # Custom merge logic - find records in df1 that don't have matches in df2
+    merged = pd.merge(df1, df2, on='KEY', how='left', indicator=True)
+    result = merged[merged['_merge'] == 'left_only'].copy()
+    result['Status'] = 'Missing Certificate'
+    
+    # Clean up the result - keep only original df1 columns plus Status
+    original_cols = df1.columns.tolist() + ['Status']
+    result = result[[col for col in original_cols if col in result.columns]]
+    
+    # Save the result
+    result.to_csv(output_path, index=False)
+    print('MERGE_SUCCESS: Created file with ' + str(len(result)) + ' rows')
+    
+except FileNotFoundError as e:
+    print(f'ERROR: File not found - {e}')
+    sys.exit(1)
+except KeyError as e:
+    print(f'ERROR: Column not found - {e}. Please check if KEY column exists in both files.')
+    sys.exit(1)
+except Exception as e:
+    print(f'ERROR: {e}')
+    sys.exit(1)
+"
 
 === QUOTING ENFORCEMENT ===
 Before command generation:
